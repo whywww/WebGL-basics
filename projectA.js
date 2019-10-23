@@ -46,6 +46,10 @@ var bowStart = false;
 var walkStart = false;
 var flyStart = true;
 var walkTmp = walk_ANGLE_STEP;
+var direction = 0;
+var currLoc = 0.0;
+var currLocZ = 0.0;
+var shapeChange = false;
 
 // Mouse click and drag
 var g_isDrag=false;
@@ -58,6 +62,7 @@ var g_yMdragTot=0.0;
 function main(){
     canvas = document.getElementById('gl_canvas');
     gl = getWebGLContext(canvas);
+    ctx = canvas.getContext("2d", {preserveDrawingBuffer: true});
     if (!gl){
         console.log('Failed to get the rendering context for WebGL');
         return;
@@ -73,6 +78,13 @@ function main(){
     window.addEventListener("mousemove", myMouseMove);
     window.addEventListener("mouseup", myMouseUp);
     window.addEventListener("keydown", myKeyDown, false);	
+    var flySlider = document.getElementById("flySpeed");
+    flySlider.oninput = function() {
+        fly_ANGLE_STEP = this.value;
+    }
+    document.getElementById("myBtn").addEventListener("click", function(){
+        shapeChange = !shapeChange;
+    });
 
     // Set Positions for vertices
     var n = initVertexBuffers(gl);  // n is number of vertices
@@ -96,7 +108,7 @@ function main(){
         walkAngle = animateWalk(walkAngle); 
         // console.log(walkAngle);
         flyAngle = animateFly(flyAngle);
-        console.log(flyAngle);
+        // console.log(flyAngle/60);
         drawRobot(modelMatrix, u_modelMatrix);   // Draw shapes
         drawHelicopter(modelMatrix, u_modelMatrix)
         requestAnimationFrame(tick, canvas);   
@@ -223,12 +235,25 @@ function animateFly(angle) {
 function walkAround(modelMatrix){
     rRobot = false;
     rHead = false;
-    modelMatrix.translate(-walkAngle/200, 0.0, 0.0);
-    // left
-    if (walk_ANGLE_STEP>0 || (walk_ANGLE_STEP==0 && walkTmp >0)){
-        modelMatrix.rotate(90, 0,1,0);
-    }else{
+    if (direction == 0){  // not specified. walk around
+        modelMatrix.translate(-walkAngle/200, 0.0, 0.0);
+        // left
+        if (walk_ANGLE_STEP>0 || (walk_ANGLE_STEP==0 && walkTmp >0)){
+            modelMatrix.rotate(90, 0,1,0);
+        }else{  // right
+            modelMatrix.rotate(-90, 0,1,0);
+        }
+    } else if(direction == 1){ // walk right a step
+        modelMatrix.translate(currLoc, 0.0, currLocZ);
         modelMatrix.rotate(-90, 0,1,0);
+    } else if(direction == -1){ // walk left a step
+        modelMatrix.translate(currLoc, 0.0, currLocZ);
+        modelMatrix.rotate(90, 0,1,0);
+    } else if(direction == 2){ // walk foward/back a step
+        modelMatrix.translate(currLoc, 0.0, currLocZ);
+    } else if(direction == -2){ // walk foward/back a step
+        modelMatrix.translate(currLoc, 0.0, currLocZ);
+        modelMatrix.rotate(180, 0,1,0);
     }
 }
 
@@ -241,65 +266,68 @@ function bow(modelMatrix, bowAngle){
 }
 
 function flyAround(modelMatrix){
-    if ()
-    modelMatrix.translate(Math.cos(flyAngle/360), 0, Math.sin(flyAngle/360)*0.8);        
+    if (flyAngle < 180 || (flyAngle>360 && flyAngle<540) || (flyAngle>720 && flyAngle<900)){
+        modelMatrix.translate(Math.cos(flyAngle/360*6)*1.1-0.1, 0, Math.sin(flyAngle/360*6)*0.5);
+    } else{
+        modelMatrix.rotate(180, 0,1,0);
+        modelMatrix.translate(-Math.cos(flyAngle/360*6)*1.1-0.1, 0, -Math.sin(flyAngle/360*6)*0.5);
+    }
+
+}
+
+function changeArmLeg(modelMatrix){
+    // arm
+    // leg
 }
 
 /*************Make shapes here***************/
 function makeSphere() {
-    // Diameter is cos(lat) when lat = 0, that is 1.
-    var slices =12;		// # of slices of the sphere along the z axis, including 
-                                        // the south-pole and north pole end caps. ( >=2 req'd)
-    var sliceVerts	= 21;	// # of vertices around the top edge of the slice
-                                        // (same number of vertices on bottom of slice, too)
-                                        // (HINT: odd# or prime#s help avoid accidental symmetry)
-    var topColr = new Float32Array([Math.random()/2+0.5, Math.random()/2+0.5, 0.0]);	// South Pole: dark-gray
-    var botColr = new Float32Array([Math.random()/2+0.5, Math.random()/2+0.5, 0.0]);	// North Pole: light-gray.
-    var errColr = new Float32Array([Math.random()/2+0.5, Math.random()/2+0.5, 0.0]);	// Bright-red trouble colr
-    var sliceAngle = Math.PI/slices;	// One slice spans this fraction of the 
-    // 180 degree (Pi radian) lattitude angle between south pole and north pole.
+    var slices =12;		
+    var sliceVerts	= 21;
 
-    // Create a (global) array to hold this sphere's vertices:
-    sphVerts = new Float32Array(  ((slices*2*sliceVerts) -2) * floatsPerVertex);
+    var topColr = new Float32Array([0.0, 0.5, 0.0]);
+    var botColr = new Float32Array([0.0, 0.7, 0.0]);
+    var errColr = new Float32Array([0.0, 0.5, 0.0]);
+    var sliceAngle = Math.PI/slices;	
+
+    sphVerts = new Float32Array(((slices*2*sliceVerts)-2) * floatsPerVertex);
                                 
-    // INITIALIZE:
-    var cosBot = 0.0;					// cosine and sine of the lattitude angle for
-    var sinBot = 0.0;					// 	the current slice's BOTTOM (southward) edge. 
-    var cosTop = 0.0;					// "	" " for current slice's TOP (northward) edge
+    var cosBot = 0.0;				
+    var sinBot = 0.0;				
+    var cosTop = 0.0;			
     var sinTop = 0.0;
-    var j = 0;							// initialize our array index
-    var isFirstSlice = 1;		// ==1 ONLY while making south-pole slice; 0 otherwise
-    var isLastSlice = 0;		// ==1 ONLY while making north-pole slice; 0 otherwise
-    for(s=0; s<slices; s++) {	// for each slice of the sphere,---------------------
-        // For current slice's top & bottom edges, find lattitude angle sin,cos:
+    var j = 0;					
+    var isFirstSlice = 1;		
+    var isLastSlice = 0;		
+    for(s=0; s<slices; s++) {	
         if(s==0) {
-            isFirstSlice = 1;		// true ONLY when we're creating the south-pole slice
-            cosBot =  0.0; 			// initialize: first slice's lower edge is south pole.
-            sinBot = -1.0;			// (cos(lat) sets slice diameter; sin(lat) sets z )
+            isFirstSlice = 1;		
+            cosBot =  0.0; 		
+            sinBot = -1.0;		
         }
-        else {					// otherwise, set new bottom edge == old top edge
+        else {					
             isFirstSlice = 0;	
             cosBot = cosTop;
             sinBot = sinTop;
-        }								// then compute sine,cosine of lattitude of new top edge.
+        }						
         cosTop = Math.cos((-Math.PI/2) +(s+1)*sliceAngle); 
         sinTop = Math.sin((-Math.PI/2) +(s+1)*sliceAngle);
-        if(s==slices-1) isLastSlice=1;// (flag: skip last vertex of the last slice).
+        if(s==slices-1) isLastSlice=1;
         for(v=isFirstSlice;    v< 2*sliceVerts-isLastSlice;   v++,j+=floatsPerVertex)
-        {						// for each vertex of this slice,
+        {					
             if(v%2 ==0) { 
-                sphVerts[j  ] = cosBot * Math.cos(Math.PI * v/sliceVerts);	// x
-                sphVerts[j+1] = cosBot * Math.sin(Math.PI * v/sliceVerts);	// y
+                sphVerts[j  ] = cosBot * Math.cos(Math.PI * v/sliceVerts);	
+                sphVerts[j+1] = cosBot * Math.sin(Math.PI * v/sliceVerts);	
                 sphVerts[j+2] = sinBot;																			// z
                 sphVerts[j+3] = 1.0;																				// w.				
             }
             else {	
-                sphVerts[j  ] = cosTop * Math.cos(Math.PI * (v-1)/sliceVerts); 	// x
-                sphVerts[j+1] = cosTop * Math.sin(Math.PI * (v-1)/sliceVerts);	// y
-                sphVerts[j+2] = sinTop;		// z
+                sphVerts[j  ] = cosTop * Math.cos(Math.PI * (v-1)/sliceVerts); 
+                sphVerts[j+1] = cosTop * Math.sin(Math.PI * (v-1)/sliceVerts);
+                sphVerts[j+2] = sinTop;		
                 sphVerts[j+3] = 1.0;	
             }
-            if(v==0) { 	// Troublesome vertex: this vertex gets shared between 3 
+            if(v==0) { 	
                 sphVerts[j+4]=errColr[0]; 
                 sphVerts[j+5]=errColr[1]; 
                 sphVerts[j+6]=errColr[2];				
@@ -314,10 +342,10 @@ function makeSphere() {
                 sphVerts[j+5]=topColr[1]; 
                 sphVerts[j+6]=topColr[2];	
             }
-            else {	// for all non-top, not-bottom slices, set vertex colors randomly
-                    sphVerts[j+4]= Math.random()/2+0.4;  	// 0.0 <= red <= 0.5
-                    sphVerts[j+5]= Math.random()/2+0.4;	// 0.0 <= grn <= 0.5 
-                    sphVerts[j+6]= 0.0;	// 0.0 <= blu <= 0.5					
+            else {	
+                    sphVerts[j+4]= 0.0; 
+                    sphVerts[j+5]= 0.5;	
+                    sphVerts[j+6]= 0.0;	
             }
         }
     }
@@ -327,6 +355,8 @@ function makeCube(){
     var faceVerts = 4;
     cubeVerts = new Float32Array((2*faceVerts+1)*6*floatsPerVertex);
 
+    upColor = new Float32Array([0.0, 0.5, 0.0]);
+
     unitLen = Math.sqrt(2);
     // up face
     for (v = 0,j = 0; v < (2*faceVerts+1); v++, j += floatsPerVertex){
@@ -335,17 +365,17 @@ function makeCube(){
             cubeVerts[j+1] = unitLen/2;
             cubeVerts[j+2] = -Math.sin(Math.PI*v/4 + Math.PI/4);
             cubeVerts[j+3] = 1.0;
-            cubeVerts[j+4] = 0.0;
-            cubeVerts[j+5] = 0.5;
-            cubeVerts[j+6] = 0.0;
+            cubeVerts[j+4] = upColor[0];
+            cubeVerts[j+5] = upColor[1];
+            cubeVerts[j+6] = upColor[2];
         } else {  // central vertices
             cubeVerts[j] = 0.0;
             cubeVerts[j+1] = unitLen/2;
             cubeVerts[j+2] = 0.0;
             cubeVerts[j+3] = 1.0; 
-            cubeVerts[j+4] = 0.0;
-            cubeVerts[j+5] = 0.5;
-            cubeVerts[j+6] = 0.0;
+            cubeVerts[j+4] = upColor[0];
+            cubeVerts[j+5] = upColor[1];
+            cubeVerts[j+6] = upColor[2];
         }
     }
 
@@ -685,13 +715,6 @@ function makePyramid() {
     pyrVerts = new Float32Array((4*botVert+3)*floatsPerVertex);
 
     // bottom
-    // pyrVerts.set([
-    //     1.0,0.0,0.0,1.0, 0.3, 0.3, 0.3,
-    //     0.0,-1.0,0.0,1.0, 0.3, 0.3, 0.3,
-    //     0.0,1.0,0.0,1.0, 0.3, 0.3, 0.3,
-    //     -1.0,0.0,0.0,1.0, 0.3, 0.3, 0.3
-    // ], 0);
-    // console.log(pyrVerts);
     for (v = 0, j = 0; v < 2*botVert+2; v++, j += floatsPerVertex){
         if (v%2 == 0){
             pyrVerts[j] = Math.cos(Math.PI*v/botVert);
@@ -719,17 +742,17 @@ function makePyramid() {
             pyrVerts[j+1] = Math.sin(Math.PI*v/botVert);
             pyrVerts[j+2] = 0.0;
             pyrVerts[j+3] = 1.0;
-            pyrVerts[j+4] = 1.0;
-            pyrVerts[j+5] = 0.0;
-            pyrVerts[j+6] = 1.0;
+            pyrVerts[j+4] = 0.0;
+            pyrVerts[j+5] = Math.random()/2;
+            pyrVerts[j+6] = 0.0;
         } else{
             pyrVerts[j] = 0.0;
             pyrVerts[j+1] = 0.0;
             pyrVerts[j+2] = 1.0;
             pyrVerts[j+3] = 1.0;
-            pyrVerts[j+4] = Math.random()/2;;
-            pyrVerts[j+5] = 0.0;
-            pyrVerts[j+6] = 1.0;
+            pyrVerts[j+4] = 0.0;
+            pyrVerts[j+5] = Math.random()/2;
+            pyrVerts[j+6] = 0.0;
         }
     }
 }
@@ -839,7 +862,7 @@ function drawRobot(modelMatrix, u_ModelMatrix){
 
     /************Robot group**************/
     // do robot transformation...
-    modelMatrix.setTranslate(-0.4, 0.0, 0.0);
+    modelMatrix.setTranslate(0.0, -0.3, 0.0);
     // mouse drag rotation
     modelMatrix.rotate(dist*120.0, g_yMdragTot+0.0001, -g_xMdragTot+0.0001, 0.0);    
 
@@ -1070,6 +1093,10 @@ function drawHelicopter(modelMatrix, u_ModelMatrix){
         flyAround(modelMatrix);
     }
     modelMatrix.scale(0.5,0.5,0.5);
+    if (shapeChange){
+        modelMatrix.scale(currentAngle/50+1, currentAngle/50+1, currentAngle/50+1);
+    }
+
     // Heli group
     pushMatrix(modelMatrix);  // rear propellers
     pushMatrix(modelMatrix); // rear wings
@@ -1210,9 +1237,10 @@ function bowEvent(){
 }
 
 function walkEvent(){
+    // stop any motion
     if (bowStart){
         bowEvent();
-    }  // stop bowing
+    } 
     rRobot = !rRobot;
     walkStart = !walkStart;
 }
@@ -1224,10 +1252,12 @@ function myMouseDown(ev) {
     // webgl(CVV) coords
     var x = (xp - canvas.width/2) / (canvas.width/2);
     var y = (yp - canvas.height/2) / (canvas.height/2);
-    
     g_isDrag = true;
     g_xMclik = x;	
     g_yMclik = y;
+    if (y>0 && x<1){
+        runStopHeli();
+    }
 }
 
 function myMouseMove(ev){
@@ -1257,6 +1287,7 @@ function myMouseUp(ev) {
     g_isDrag = false;	
     g_xMdragTot += (x - g_xMclik);
     g_yMdragTot += (y - g_yMclik);
+    
 }
 
 function myKeyDown(ev){
@@ -1272,28 +1303,73 @@ function myKeyDown(ev){
           }
           break;
         
-        case "ArrowUp":
-          ANGLE_STEP += 10;
-          break;
-        
-        case "ArrowDown":
-          ANGLE_STEP -= 10;
-          break;
+        case "KeyA":
+            // walk left
+            if (bowStart){
+                bowEvent();
+            }
+            walkStart = true;
+            direction = -1;
+            currLoc -= Math.abs(walk_ANGLE_STEP)/200;
+            // console.log(walk_ANGLE_STEP);
+            break;
 
-        case "ArrowLeft":
-          drawAll(gl, ModelMatrix, currentAngle = currentAngle-10);
-          break;
+        case "KeyD":
+            // walk right
+            if (bowStart){
+                bowEvent();
+            }
+            walkStart = true;
+            direction = 1;
+            currLoc += Math.abs(walk_ANGLE_STEP)/200;
+            // console.log(walk_ANGLE_STEP);
+            break;
 
-        case "ArrowRight":
-            drawAll(gl, ModelMatrix, currentAngle = currentAngle+10);
+        case "KeyW":
+            // walk foward
+            if (bowStart){
+                bowEvent();
+            }
+            walkStart = true;
+            direction = 2;
+            currLocZ -= Math.abs(walk_ANGLE_STEP)/200;
+            break;
+        case "KeyS":
+            // walk back
+            if (bowStart){
+                bowEvent();
+            }
+            walkStart = true;
+            direction = -2;
+            currLocZ += Math.abs(walk_ANGLE_STEP)/200;
             break;
     }
 }
 
 function speedUp() {
-    walk_ANGLE_STEP += 10; 
+    if (walk_ANGLE_STEP > 0){
+        walk_ANGLE_STEP += 10; 
+    }else{
+        walk_ANGLE_STEP -= 10;
+    }
+
+    console.log(walk_ANGLE_STEP);
 }
     
 function speedDown() {
-    walk_ANGLE_STEP -= 10; 
+    if (walk_ANGLE_STEP > 0){
+        walk_ANGLE_STEP -= 10; 
+    }else{
+        walk_ANGLE_STEP += 10;
+    }
+    console.log(walk_ANGLE_STEP);
+}
+
+function runStopHeli(){
+    if(fly_ANGLE_STEP*fly_ANGLE_STEP > 1) {  // stop currentAngle
+        flyTmp = fly_ANGLE_STEP;
+        fly_ANGLE_STEP = 0;
+    }else {
+        fly_ANGLE_STEP = flyTmp;
+    }
 }
