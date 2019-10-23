@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>My Practice Code</title>
+    <script src="./projectA.js"></script>
+    <script src="./lib/cuon-matrix-mod.js"></script>
+    <script src="./lib/cuon-utils.js"></script>
+    <script src="./lib/webgl-debug.js"></script>
+    <script src="./lib/webgl-utils.js"></script>
+    <style type="text/css">
+        canvas {
+            border: 5px dotted blue;
+        }
+    </style>
+</head>
+<body onload="main()">
+    <canvas id="gl_canvas" width="600" height="600">
+        Please use the browser supporting "canvas";
+    </canvas>
+    <p>Click and move your mouse to control the robot! </p>
+    <p>
+        Press <button type="button" onclick="runStop()">here</button> or key 'P' to Run/Stop any motion.
+        
+    </p>
+    <!-- <p> -->
+        <!-- Want them to move faster/slower?  -->
+        <!-- <button type="button" onclick="speedUp()">Speeed UP</button> -->
+        <!-- <button type="button" onclick="speedDown()">Speed DOWN</button>  -->
+    <!-- </p> -->
+    <p>
+        What would you like me to hold?
+        <select id="selectThings" onchange="selectEvent()">
+            <option value="torus">Torus</option>
+            <option value="arrow">Umbrella</option>
+            <!-- <option value="diamond">Diamond</option> -->
+            <!-- <option value="audi">Audi</option> -->
+        </select>
+    </p>
+    <p>
+        <button type="button" onclick="bowEvent()">Start/Stop Bowing</button> 
+        <button type="button" onclick="walkEvent()">Start/Stop Walking</button> 
+    </p>
+    
+</body>
+</html>
