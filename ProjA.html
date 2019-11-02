@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
     <title>My Practice Code</title>
-    <script src="./projectA.js"></script>
+    <script src="./projA.js"></script>
     <script src="./lib/cuon-matrix-mod.js"></script>
     <script src="./lib/cuon-utils.js"></script>
     <script src="./lib/webgl-debug.js"></script>
@@ -31,15 +31,14 @@
     </canvas>
     <div class="robot">
         <h2>Control Robot</h2>
-        <p>Click and move your mouse to rotate the robot. Use 'WSAD' keys to control the robot walk!</p>
-        <p>Press <button type="button" onclick="runStop()">here</button> or key 'P' to Run/Stop the robot.</p>
+        <p><font color = Tomato>Click and move</font> your mouse to rotate the robot. Use <font color = Tomato>'WSAD'</font> keys to control the robot walk!</p>
+        <i>(Caution! going too far forward/back (on Z axis) may cause the robot disappear.)</i>
+        <p>Press <button type="button" onclick="runStop()">stop</button> or key <font color = Tomato>'P'</font> to Run/Stop the robot.</p>
         <p>
-            What would you like me to hold?
+            What would you like me to <font color = Tomato>hold</font>?
             <select id="selectThings" onchange="selectEvent()">
                 <option value="torus">Torus</option>
                 <option value="arrow">Umbrella</option>
-                <!-- <option value="diamond">Diamond</option> -->
-                <!-- <option value="audi">Audi</option> -->
             </select>
         </p>
         <p>
@@ -47,8 +46,7 @@
             <button type="button" onclick="walkEvent()">Start/Stop Walking</button> 
         </p>
         <p>
-            Click to change my walking SPEED!
-            <!-- slow<input type="range" min="0" max="90" value="30" id="walkSpeed">fast -->
+            Click to change my walking <font color = Tomato>SPEED</font>!
             <button type="button" onclick="speedUp()">Walk Faster</button>
             <button type="button" onclick="speedDown()">Walk Slower</button> 
         </p>
@@ -57,7 +55,8 @@
 
     <div class="heli">
         <h2>Control Helicopter</h2>
-        Scroll me to change the Helicopter SPEED!   
+        <p>Try to <font color = Tomato>CLICK</font> on the Helicopter area to stop/start it!</p>
+        Scroll me to change the Helicopter <font color = Tomato>SPEED</font>!   
         slow<input type="range" min="20" max="100" value="60" id="flySpeed">fast
         <p><button type="button" id="myBtn">Helicopter Shape Change</button> </p>
     </div>

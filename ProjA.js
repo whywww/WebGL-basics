@@ -42,14 +42,15 @@ var rRArm = true;  // robot right arm
 var rHead = true; // robot head
 var rLower = true; // robot lower body
 var rThing = true;  // thing the robot holds
-var bowStart = false;
-var walkStart = false;
-var flyStart = true;
+var bowStart = false;  // if start bowing
+var walkStart = false;  // if start walking continuously
+var stepStart = false;  // if start walking step by step
+var flyStart = true;  // if helicopter start flying
 var walkTmp = walk_ANGLE_STEP;
-var direction = 0;
-var currLoc = 0.0;
-var currLocZ = 0.0;
-var shapeChange = false;
+var direction = 0;  // direction of the robot walking. 0 is walking around. +/-1 is right/left. +/-2 is foward/back.
+var currLocX = 0.0;  // current walking location on X axis.
+var currLocZ = 0.0;  // current walking location on Z axis.
+var shapeChange = false;  // whether helicopter has changed shape.
 
 // Mouse click and drag
 var g_isDrag=false;
@@ -244,15 +245,15 @@ function walkAround(modelMatrix){
             modelMatrix.rotate(-90, 0,1,0);
         }
     } else if(direction == 1){ // walk right a step
-        modelMatrix.translate(currLoc, 0.0, currLocZ);
+        modelMatrix.translate(currLocX, 0.0, currLocZ);
         modelMatrix.rotate(-90, 0,1,0);
     } else if(direction == -1){ // walk left a step
-        modelMatrix.translate(currLoc, 0.0, currLocZ);
+        modelMatrix.translate(currLocX, 0.0, currLocZ);
         modelMatrix.rotate(90, 0,1,0);
     } else if(direction == 2){ // walk foward/back a step
-        modelMatrix.translate(currLoc, 0.0, currLocZ);
+        modelMatrix.translate(currLocX, 0.0, currLocZ);
     } else if(direction == -2){ // walk foward/back a step
-        modelMatrix.translate(currLoc, 0.0, currLocZ);
+        modelMatrix.translate(currLocX, 0.0, currLocZ);
         modelMatrix.rotate(180, 0,1,0);
     }
 }
@@ -267,10 +268,10 @@ function bow(modelMatrix, bowAngle){
 
 function flyAround(modelMatrix){
     if (flyAngle < 180 || (flyAngle>360 && flyAngle<540) || (flyAngle>720 && flyAngle<900)){
-        modelMatrix.translate(Math.cos(flyAngle/360*6)*1.1-0.1, 0, Math.sin(flyAngle/360*6)*0.5);
+        modelMatrix.translate(Math.cos(flyAngle/360*6)*1.8-0.1, 0, Math.sin(flyAngle/360*6)*0.5);
     } else{
         modelMatrix.rotate(180, 0,1,0);
-        modelMatrix.translate(-Math.cos(flyAngle/360*6)*1.1-0.1, 0, -Math.sin(flyAngle/360*6)*0.5);
+        modelMatrix.translate(-Math.cos(flyAngle/360*6)*1.9-0.1, 0, -Math.sin(flyAngle/360*6)*0.5);
     }
 
 }
@@ -803,57 +804,6 @@ function makeCone() {
     }
 }
 
-// function makeDiamond() {
-//     var topnum = 4;
-//     var extendRate = 1.5;
-//     var radius = 45;
-//     dmVerts = new Float32Array(4*topnum+3);
-
-//     // top
-//     for (v = 0, j = 0; v < 2*topnum+1; v++, j+=floatsPerVertex){
-//         if (v%2 == 0){
-//             dmVerts[j] = Math.cos(Math.PI*v/topnum);
-//             dmVerts[j+1] = Math.sin(Math.PI*v/topnum);
-//             dmVerts[j+2] = 0.0;
-//             dmVerts[j+3] = 1.0;
-//             dmVerts[j+4] = 1.0;
-//             dmVerts[j+5] = 1.0;
-//             dmVerts[j+6] = 0.0;
-//         }
-//         else{
-//             dmVerts[j] = 0.0;
-//             dmVerts[j+1] = 0.0;
-//             dmVerts[j+2] = 0.0;
-//             dmVerts[j+3] = 1.0;
-//             dmVerts[j+4] = 1.0;
-//             dmVerts[j+5] = 1.0;
-//             dmVerts[j+6] = 0.0;
-//         }
-//     }
-
-//     // second layer
-//     for (v = 0; v < 2*topnum+2; v++, j+=floatsPerVertex){
-//         if (v%2 == 0){
-//             dmVerts[j] = Math.cos(Math.PI*v/topnum);
-//             dmVerts[j+1] = Math.sin(Math.PI*v/topnum);
-//             dmVerts[j+2] = 0.0;
-//             dmVerts[j+3] = 1.0;
-//             dmVerts[j+4] = 1.0;
-//             dmVerts[j+5] = 1.0;
-//             dmVerts[j+6] = 0.0;
-//         }
-//         else{
-//             dmVerts[j] = extendRate*Math.cos(Math.PI*v/topnum);
-//             dmVerts[j+1] = extendRate*Math.sin(Math.PI*v/topnum);
-//             dmVerts[j+2] = extendRate*Math.sin(radius);
-//             dmVerts[j+3] = 1.0;
-//             dmVerts[j+4] = 1.0;
-//             dmVerts[j+5] = 1.0;
-//             dmVerts[j+6] = 0.0;
-//         }
-//     }
-// }
-
 /*************Draw parts here***************/
 function drawRobot(modelMatrix, u_ModelMatrix){
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -866,7 +816,7 @@ function drawRobot(modelMatrix, u_ModelMatrix){
     // mouse drag rotation
     modelMatrix.rotate(dist*120.0, g_yMdragTot+0.0001, -g_xMdragTot+0.0001, 0.0);    
 
-    if (walkStart){
+    if (walkStart || stepStart){
         walkAround(modelMatrix);
     }
     if (rRobot){
@@ -1234,6 +1184,7 @@ function bowEvent(){
         rThing = true;
     }
     walkStart = false;
+    stepStart = false;
 }
 
 function walkEvent(){
@@ -1241,8 +1192,23 @@ function walkEvent(){
     if (bowStart){
         bowEvent();
     } 
+    if(ANGLE_STEP*ANGLE_STEP <= 1) { // if robot stopped
+        runStop();
+    }
     rRobot = !rRobot;
     walkStart = !walkStart;
+    direction = 0;
+    stepStart = false;
+}
+
+function stepEvent(){
+    if (bowStart){
+        bowEvent();
+    }
+    stepStart = true;
+    if(ANGLE_STEP*ANGLE_STEP <= 1) { // if robot stopped
+        runStop();
+    }
 }
 
 function myMouseDown(ev) {  
@@ -1255,7 +1221,9 @@ function myMouseDown(ev) {
     g_isDrag = true;
     g_xMclik = x;	
     g_yMclik = y;
-    if (y>0 && x<1){
+    // console.log(ev.clientX + ', ' + ev.clientY);
+    // Stop helicopter by clicking in a specific area.
+    if (ev.clientX<610 && ev.clientY<230){   // when using x, y, seems x and y may have same values outside canvas.
         runStopHeli();
     }
 }
@@ -1305,43 +1273,30 @@ function myKeyDown(ev){
         
         case "KeyA":
             // walk left
-            if (bowStart){
-                bowEvent();
-            }
-            walkStart = true;
             direction = -1;
-            currLoc -= Math.abs(walk_ANGLE_STEP)/200;
-            // console.log(walk_ANGLE_STEP);
+            currLocX -= Math.abs(walk_ANGLE_STEP)/200;
+            stepEvent();
+            // console.log(walkStart);
             break;
 
         case "KeyD":
             // walk right
-            if (bowStart){
-                bowEvent();
-            }
-            walkStart = true;
             direction = 1;
-            currLoc += Math.abs(walk_ANGLE_STEP)/200;
-            // console.log(walk_ANGLE_STEP);
+            currLocX += Math.abs(walk_ANGLE_STEP)/200;
+            stepEvent();
             break;
 
         case "KeyW":
             // walk foward
-            if (bowStart){
-                bowEvent();
-            }
-            walkStart = true;
             direction = 2;
             currLocZ -= Math.abs(walk_ANGLE_STEP)/200;
+            stepEvent();
             break;
         case "KeyS":
             // walk back
-            if (bowStart){
-                bowEvent();
-            }
-            walkStart = true;
             direction = -2;
             currLocZ += Math.abs(walk_ANGLE_STEP)/200;
+            stepEvent();
             break;
     }
 }
