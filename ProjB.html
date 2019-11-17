@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>My Practice Code</title>
+    <script src="./ProjB.js"></script>
+    <!-- <script src="./lib/cuon-matrix-mod.js"></script> -->
+    <script src="./lib/cuon-utils.js"></script>
+    <script src="./lib/webgl-debug.js"></script>
+    <script src="./lib/webgl-utils.js"></script>
+    <script src="./lib/cuon-matrix-quat03.js"></script>
+    <script type="text/javascript" src="./lib/dat.gui.min.js"></script>
+    <style type="text/css">
+        canvas {
+            border: 5px dotted blue;
+            float: left;
+        }
+        .object{
+            float: left;
+            margin: 30px;
+        }
+        .view{
+            float: left;
+            margin: 30px;
+        }
+    </style>
+</head>
+<body onload="main()" onresize="drawResize()">
+    <canvas id="gl_canvas" width="600" height="600">
+        Please use the browser supporting "canvas";
+    </canvas>
+    <div class="object"> <h3>Keyboard/Mouse Instructions:</h3></div>
+    <div class="object">
+        <!-- <p>Control Robot:</p> -->
+        <div>
+            <font color = 'Tomato'>Drag</font> your mouse to rotate the robot. <br>
+             <!-- control the robot walk! -->
+        </div>
+        <div>
+            Press <font color = 'Tomato'>'WSAD'</font> keys to walk close to the cones. <br>
+            And press <font color = 'Tomato'>Space</font> to pick up things or open/close the Door! <br>
+        </div>
+        <!-- <p>Control Helicopter:</p>         -->
+        <div>
+            Press <font color = 'Tomato'>'P'</font> to pause/start robot moving. <br>            
+            Try to <font color = 'Tomato'>CLICK</font> on the Helicopter area to stop/start it! </div>
+    </div>
+    
+    <div class="view">
+        <div>
+            Press <font color = 'Tomato'>'H'</font> to hide/show the control bar. <br>
+            Press <font color = 'Tomato'>'IJKL'</font> to move the camera's direction horizontally/vertically. <br>
+            Press <font color = 'Tomato'>&#8592&#8593&#8594&#8595</font> to move the camera sideways/up/down. <br>
+            Press <font color = 'Tomato'>'+/-'</font> to move the camera forward/backward.
+        </div>
+    </div>
+    
+</body>
+</html>
