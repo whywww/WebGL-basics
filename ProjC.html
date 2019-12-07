@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>My Practice Code</title>
+    <!-- <script src="./lib/cuon-matrix-mod.js"></script> -->
+    <script src="./lib/cuon-utils.js"></script>
+    <script src="./lib/webgl-debug.js"></script>
+    <script src="./lib/webgl-utils.js"></script>
+    <script src="./lib/cuon-matrix-quat03.js"></script>
+    <script type="text/javascript" src="./lib/dat.gui.min.js"></script>
+    <script src="./lib/materials_Ayerdi04.js"></script>
+    <script src="./lib/lights-JT01.js"></script>
+    <script src="./ProjC-Lib.js"></script>
+    <script src="./ProjC.js"></script>
+    <style type="text/css">
+        canvas {
+            border: 5px dotted blue;
+            float: left;
+        }
+        .object{
+            float: left;
+            margin: 30px;
+        }
+        .view{
+            float: left;
+            margin: 30px;
+        }
+    </style>
+</head>
+<body onload="main()" onresize="drawResize()">
+    <canvas id="gl_canvas" width="600" height="600">
+        Please use the browser supporting "canvas";
+    </canvas>
+    <div class="object"> <h3>Keyboard/Mouse Instructions:</h3></div>
+    <div class="object">
+        <div>
+            Press <font color = 'Tomato'>'IJKL'</font> to move the camera's direction horizontally/vertically. <br>
+            Press <font color = 'Tomato'>&#8592&#8593&#8594&#8595</font> to move the camera sideways/up/down. <br>
+            Press <font color = 'Tomato'>'+/-'</font> to move the camera forward/backward.
+        </div>
+        <br> Third light source: 
+        <div style="text-align:center;width:300px;">
+            
+                <button onclick="moveup()"> UP </button><br>
+                <button onclick="moveleft()">LEFT</button>
+                <button onclick="moveright()">RIGHT</button><br>
+                <button onclick="movedown()">DOWN</button>
+        </div>
+    </div>
+    
+    <div class="view">
+        <div>
+            Press <font color = 'Tomato'>'T'</font> to toggle texture image. <br>
+            <font color = 'Tomato'>Drag</font> your mouse to change the world lamp position. <br>
+            Press <font color = 'Tomato'>'C/X'</font> to toggle the two lamps. <br>
+            Press <font color = 'Tomato'>'WASD'</font> to change materials of each object. <br>
+            Press <font color = 'Tomato'>'1/2/3'</font> to switch among Original(no light), Gouroud and Phong shading. <br>
+            Press <font color = 'Tomato'>'B'</font> to switch between Blinn-Phong & Phong lighting. <br>
+            Press <font color = 'Tomato'>'7890'</font> to switch between Gouroud & Phong shading of each object. <br>
+        </div>
+    </div>
+    
+</body>
+</html>
