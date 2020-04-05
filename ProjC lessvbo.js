@@ -1,41 +1,34 @@
 /**
  * @Author Haoyu Wei
- * @Date 06 Nov 2019
- * @Note Project B
+ * @Date 27 Nov 2019
+ * @Note Project C
  */
 
-// Vertex Shader
-var VSHADER_SOURCE = 
-    'attribute vec4 a_Position;\n' +  // 4x1
-    'attribute vec4 a_Color;\n' +  // Color should be RGBA, but A is optional, default 1
-    'varying vec4 v_Color;\n' +
-    'uniform mat4 u_modelMatrix;\n' + //  Using matrix. 4x4
-    // 'uniform mat4 u_ProjMatrix;\n' +
-    'void main(){\n' +
-    '   gl_Position = u_modelMatrix * a_Position;\n' + // Matrix. See who's in the front~
-    '   v_Color = a_Color;\n' +
-    '}\n';
-// Fragment Shader
-var FSHADER_SOURCE = 
-    'precision mediump float;\n' + 
-    'varying vec4 v_Color;\n' +
-    'void main(){\n' +
-    '   gl_FragColor = v_Color;\n' +
-    '}\n';
+ /** Global Variables */
+ // For Multiple Shaders
+worldBox = new VBObox00();  // Without Lighting
+partBox1 = new VBObox1();  // Without Lighting
+partBox2 = new VBObox2();  // With Grouroud Shading
+partBox3 = new VBObox3();  // With Phong Shading
 
+var g_show00 = 1;
+var g_show1 = 1;
+var g_show2 = 0;
+var g_show3 = 0;
 
-/** Global Variables */
 // For 3D shapes
-var floatsPerVertex = 7; 
+var floatsPerVertex = 10; 
 
-// For animation
+ // For animation
 var currentAngle = 0.0;
 var walkAngle = 0.0;
 var flyAngle = 0.0;
+var sphAngle = 0.0;
 
 var ANGLE_STEP = 45.0;
 var walk_ANGLE_STEP = 30.0;	
 var fly_ANGLE_STEP = 60.0;
+var sph_ANGLE_STEP = 30.0;
 
 var rRobot = true; // if rotate whole robot
 var rLArm = true;  // robot left arm
@@ -59,8 +52,8 @@ var open = false;
 var isDrag=false;
 var xMclik=0.0;
 var yMclik=0.0;   
-var xMdragTot=0.0;
-var yMdragTot=0.0; 
+var xMdragTot=0;
+var yMdragTot=0; 
 
 // View & Projection
 var eyeX = 0.0;
@@ -73,7 +66,7 @@ var theta = 0.0;  // turn camera horizontally to angle theta
 var r = eyeY-atY;  // radius of camera cylinder
 var tilt = 0.0;
 
-var fLeft = -2.0;  // frustum para
+var fLeft = -2.0;  // frustum paras
 var fRight = 2.0;
 var fBottom = -2.0;
 var fTop = 2.0;
@@ -89,11 +82,14 @@ function main(){
         console.log('Failed to get the rendering context for WebGL');
         return;
     }
-    if (!initShaders(gl, VSHADER_SOURCE, FSHADER_SOURCE)){
-        console.log('Failed to initialize shaders');
-        return;
-    }
+    worldBox.init(gl);
+    partBox1.init(gl);
+    partBox2.init(gl);
+    partBox3.init(gl);
 
+    normalMatrix = new Matrix4();
+    vpMatrix = new Matrix4();
+    mvpMatrix = new Matrix4();
     // Event register
     window.addEventListener("mousedown", myMouseDown);
     window.addEventListener("mousemove", myMouseMove);
@@ -106,7 +102,7 @@ function main(){
         this.walk = function(){walkEvent()};
         this.walkSpeed = 30;
         this.bow = function(){bowEvent()};
-        this.hold = '--select--';
+        // this.hold = '--select--';
         this.stopHelicopter = function(){runStopHeli()};
         this.speed = 60;
         this.shapeChange = function(){shapeChange = !shapeChange};
@@ -117,6 +113,15 @@ function main(){
         this.top = 2.0;
         this.near = 3.0;
         this.far = 100.0;
+        this.attenuation = 'none';
+        this.lampCameraOn = true;
+        this.lampWorldOn = true;
+        this.ambient0 = true;
+        this.diffuse0 = true;
+        this.specular0 = true;
+        this.ambient1 = true;
+        this.diffuse1 = true;
+        this.specular1 = true;
       };
       
     var text = new GUIContent();
@@ -133,14 +138,14 @@ function main(){
             walk_ANGLE_STEP = -newValue;
         }
     });
-    robot.add(text, 'hold', ['Torus', 'Umbrella']).onChange(function(newValue){hold = newValue;}).listen();
-    robot.open();
+    // robot.add(text, 'hold', ['Torus', 'Umbrella']).onChange(function(newValue){hold = newValue;}).listen();
+    // robot.open();
 
     var heli = gui.addFolder('Helicopter');
     heli.add(text, 'stopHelicopter');
     heli.add(text, 'speed', 20, 100).onChange(function(newValue){fly_ANGLE_STEP = newValue;});
     heli.add(text, 'shapeChange');
-    heli.open();
+    // heli.open();
 
     var view = gui.addFolder('View');
     view.add(text, 'frustum').onChange(function(){frustum = !frustum});
@@ -150,117 +155,125 @@ function main(){
     view.add(text, 'top').onChange(function(newValue){fTop = newValue;});
     view.add(text, 'near').onChange(function(newValue){fNear = newValue;});
     view.add(text, 'far').onChange(function(newValue){fFar = newValue;});
-    view.open();
 
-    // Set Positions for vertices
-    var n = initVertexBuffers(gl);  // n is number of vertices
-    if (n < 0){
-        console.log('Failed to set the Positions of the vertices');
-        return;
-    }
+    var lamp = gui.addFolder('Lamps');
+    lamp.add(text, 'attenuation', ['none', '1/dis', '1/(dis*dis)']).onChange(function(newValue){
+        if (newValue == 'none'){
+            whichAttFunc = 0;
+        }else if(newValue == '1/dis'){
+            whichAttFunc = 1;
+        } else if (newValue == '1/(dis*dis)'){
+            whichAttFunc = 2;
+        }
+    })
+    var lampWorld = lamp.addFolder('lampWorld');
+    lampWorld.add(text, 'lampWorldOn').onChange(function(){lamp0On = !lamp0On;});
+    lampWorld.add(text, 'ambient0').onChange(function(newValue){
+        if(newValue){
+            lamp0.I_ambi.elements.set(amb);
+            console.log(amb);
+        }else{
+            lamp0.I_ambi.elements.set(dark);
+        }
+    });
+    lampWorld.add(text, 'diffuse0').onChange(function(newValue){
+        if(newValue){
+            lamp0.I_diff.elements.set(dif);
+        }else{
+            lamp0.I_diff.elements.set(dark);
+        }
+    });
+    lampWorld.add(text, 'specular0').onChange(function(newValue){
+        if(newValue){
+            lamp0.I_spec.elements.set(spe);
+        }else{
+            lamp0.I_spec.elements.set(dark);
+        }
+    });
+    var lampCamera = lamp.addFolder('lampCamera');
+    lampCamera.add(text, 'lampCameraOn').onChange(function(){lamp1On = !lamp1On;});
+    lampCamera.add(text, 'ambient1').onChange(function(newValue){
+        if(newValue){
+            lamp1.I_ambi.elements.set(amb);
+            console.log(amb);
+        }else{
+            lamp1.I_ambi.elements.set(dark);
+        }
+    });
+    lampCamera.add(text, 'diffuse1').onChange(function(newValue){
+        if(newValue){
+            lamp1.I_diff.elements.set(dif);
+        }else{
+            lamp1.I_diff.elements.set(dark);
+        }
+    });
+    lampCamera.add(text, 'specular1').onChange(function(newValue){
+        if(newValue){
+            lamp1.I_spec.elements.set(spe);
+        }else{
+            lamp1.I_spec.elements.set(dark);
+        }
+    });
+    lamp.open();
+    lampCamera.open();
+    lampWorld.open();
 
-    modelMatrix = new Matrix4();
-    qNew = new Quaternion(0,0,0,1); // most-recent mouse drag's rotation
-    qTot = new Quaternion(0,0,0,1);	
-    quatMatrix = new Matrix4();  // rotation matrix
-
-    u_modelMatrix = gl.getUniformLocation(gl.program, 'u_modelMatrix');
-    gl.uniformMatrix4fv(u_modelMatrix, false, modelMatrix.elements);  // 2nd para is Transpose. Must be false in WebGL.
-
-    gl.clearColor(0.53, 0.8, 0.92, 1.0)
+    gl.clearColor(0.53, 0.8, 0.92, 1.0);
     gl.enable(gl.DEPTH_TEST); 
 
     var tick = function() {
         currentAngle = animate(currentAngle);  // Update the rotation angle
-        // console.log(currentAngle);
         walkAngle = animateWalk(walkAngle); 
-        // console.log(walkAngle);
         flyAngle = animateFly(flyAngle);
-        // console.log(flyAngle/60);
+        sphAngle = animateSphere(sphAngle);
         drawResize();
         requestAnimationFrame(tick, canvas);   
     };
     tick();	
 }
 
-function initVertexBuffers(gl){
-    makeCube();  // upper body
-    makeSphere();  // head
-    makeCylinder();  // legs
-    makeTorus(); // things
-    makeCone();  // cone
-    makePyramid(); // pyramid
-    makeGroundGrid();
-    makeAxis();  // world axis
+function drawResize(){
+    var nuCanvas = document.getElementById('gl_canvas');	// get current canvas
+    var nuGl = getWebGLContext(nuCanvas);
+    
+    nuCanvas.width = innerWidth - 16;
+    nuCanvas.height = innerHeight*3/4 - 16;
 
-    var totalSize = cubeVerts.length + sphVerts.length + cylVerts.length + torVerts.length + pyrVerts.length + coneVert.length + gndVerts.length + axisVerts.length;
-    var n = totalSize / floatsPerVertex;
-    var vertices = new Float32Array(totalSize);
+    drawAll(nuGl);
+}
 
-    // copy vertices from single shapes to 'vertices'
-    cubeStart = 0;
-    for (i = 0, j = 0; j < cubeVerts.length; i++, j++){
-        vertices[i] = cubeVerts[j];
+function drawAll(gl){
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight); 
+    if (frustum){
+        vpMatrix.setFrustum(fLeft,fRight,fBottom,fTop,fNear,fFar);
+    } else{
+        var ratio = canvas.width/canvas.height;
+        vpMatrix.setPerspective(30, ratio, 1, 100);
     }
-    sphStart = i;
-    for (j = 0; j < sphVerts.length; i++, j++){
-        vertices[i] = sphVerts[j];
-    }
-    cylStart = i;
-    for (j = 0; j < cylVerts.length; i++, j++){
-        vertices[i] = cylVerts[j];
-    }
-    torStart = i;
-    for(j=0; j< torVerts.length; i++, j++) {
-		vertices[i] = torVerts[j];
-    }
-    pyrStart = i;
-    for(j=0; j< pyrVerts.length; i++, j++) {
-		vertices[i] = pyrVerts[j];
-    }
-    coneStart = i;
-    for(j=0; j< coneVert.length; i++, j++) {
-		vertices[i] = coneVert[j];
-    }
-    gndStart = i;
-    for(j=0; j< gndVerts.length; i++, j++) {
-		vertices[i] = gndVerts[j];
-    }
-    axisStart = i;
-    for(j=0; j< axisVerts.length; i++, j++) {
-		vertices[i] = axisVerts[j];
-    }
+    vpMatrix.lookAt(eyeX,eyeY,eyeZ, atX,atY,atZ, 0.0,0.0,1.0);  
 
-    // 1. Create Buffer Object
-    var vertexBuffer = gl.createBuffer();
-    if (!vertexBuffer){
-        console.log('Failed to create vertext buffer');
-        return -1;
+    if (g_show00){
+        worldBox.switchToMe();  
+        worldBox.adjust();
+        worldBox.draw();
     }
-
-    // 2. Bind buffer obeject to target
-    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);  // Target can be gl.ELEMENT_ARRAY_BUFFER
-
-    // 3. Write vertice positions to buffer object
-    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);  // gl.STREAM_DRAW, gl_DYNAMIC_DRAW. only used for optimization
-
-    // 4. Assign buffer object to attribute variable
-    // Get size per element
-    var FSIZE = vertices.BYTES_PER_ELEMENT;
-
-    // Only attribute variables are wrote here. 
-    var a_Position = gl.getAttribLocation(gl.program, 'a_Position');
-    var a_Color = gl.getAttribLocation(gl.program, 'a_Color');
-    gl.vertexAttribPointer(a_Position, 4, gl.FLOAT, false, FSIZE*floatsPerVertex, 0); 
-    gl.vertexAttribPointer(a_Color, 3, gl.FLOAT, false, FSIZE*floatsPerVertex, FSIZE*4);  
-
-    // 5. Enable the assignment to attribute variable
-    gl.enableVertexAttribArray(a_Position);  // or disable...
-    gl.enableVertexAttribArray(a_Color);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, null);
-
-    return n;
+    if (g_show1){
+        partBox1.switchToMe();  
+        partBox1.adjust();
+        partBox1.draw();
+    }
+    if (g_show2){
+        partBox2.switchToMe();  
+        partBox2.adjust();
+        partBox2.draw();
+    }
+    if (g_show3){
+        partBox3.switchToMe();  
+        partBox3.adjust();
+        partBox3.draw();
+    }
 }
 
 /*************Animations here***************/
@@ -303,6 +316,16 @@ function animateFly(angle) {
     return newAngle %= 360*3;
 }
 
+var g_last3 = Date.now();
+function animateSphere(angle) {
+  var now = Date.now();
+  var elapsed = now - g_last3;
+  g_last3 = now;
+
+  var newAngle = angle + (sph_ANGLE_STEP * elapsed) / 1000.0;
+  return newAngle %= 360*3;
+}
+
 function walkAround(modelMatrix){
     rRobot = false;
     rHead = false;
@@ -339,6 +362,52 @@ function flyAround(modelMatrix){
 }
 
 /*************Make shapes here***************/
+function makeGroundGrid(){
+    var xcount = 100;
+    var ycount = 100;		
+    var xymax	= 50.0;
+    var xColr = new Float32Array([1.0, 1.0, 0.3]);
+    var yColr = new Float32Array([0.5, 1.0, 0.5]);
+    gndVerts =  new Float32Array(7*2*(xcount+ycount));
+    var xgap = xymax/(xcount-1);
+    var ygap = xymax/(ycount-1);
+    for(v=0, j=0; v<2*xcount; v++, j+= 7) {
+        if(v%2==0) {
+            gndVerts[j  ] = -xymax + (v)*xgap;
+            gndVerts[j+1] = -xymax;
+            gndVerts[j+2] = 0.0;
+            gndVerts[j+3] = 1.0;
+        }
+        else {
+            gndVerts[j  ] = -xymax + (v-1)*xgap;
+            gndVerts[j+1] = xymax;
+            gndVerts[j+2] = 0.0;
+            gndVerts[j+3] = 1.0;
+        }
+        gndVerts[j+4] = xColr[0];
+        gndVerts[j+5] = xColr[1];
+        gndVerts[j+6] = xColr[2];
+    }
+
+    for(v=0; v<2*ycount; v++, j+= 7) {
+        if(v%2==0) {
+            gndVerts[j  ] = -xymax;
+            gndVerts[j+1] = -xymax + (v)*ygap;
+            gndVerts[j+2] = 0.0;
+            gndVerts[j+3] = 1.0;
+        }
+        else {
+            gndVerts[j  ] = xymax;
+            gndVerts[j+1] = -xymax + (v-1)*ygap;
+            gndVerts[j+2] = 0.0;
+            gndVerts[j+3] = 1.0;
+        }
+        gndVerts[j+4] = yColr[0];
+        gndVerts[j+5] = yColr[1];
+        gndVerts[j+6] = yColr[2];
+    }
+}
+
 function makeSphere() {
     var slices =12;		
     var sliceVerts	= 21;
@@ -377,37 +446,119 @@ function makeSphere() {
                 sphVerts[j  ] = cosBot * Math.cos(Math.PI * v/sliceVerts);	
                 sphVerts[j+1] = cosBot * Math.sin(Math.PI * v/sliceVerts);	
                 sphVerts[j+2] = sinBot;																			// z
-                sphVerts[j+3] = 1.0;																				// w.				
+                sphVerts[j+3] = 1.0;
+                sphVerts[j+7] = cosBot * Math.cos(Math.PI * v/sliceVerts);	
+                sphVerts[j+8] = cosBot * Math.sin(Math.PI * v/sliceVerts);	
+                sphVerts[j+9] = sinBot;																			// z
             }
             else {	
                 sphVerts[j  ] = cosTop * Math.cos(Math.PI * (v-1)/sliceVerts); 
                 sphVerts[j+1] = cosTop * Math.sin(Math.PI * (v-1)/sliceVerts);
                 sphVerts[j+2] = sinTop;		
                 sphVerts[j+3] = 1.0;	
+                sphVerts[j+7] = cosTop * Math.cos(Math.PI * (v-1)/sliceVerts); 
+                sphVerts[j+8] = cosTop * Math.sin(Math.PI * (v-1)/sliceVerts);
+                sphVerts[j+9] = sinTop;	
             }
             if(v==0) { 	
                 sphVerts[j+4]=errColr[0]; 
                 sphVerts[j+5]=errColr[1]; 
                 sphVerts[j+6]=errColr[2];				
-                }
+            }
             else if(isFirstSlice==1) {	
                 sphVerts[j+4]=botColr[0]; 
                 sphVerts[j+5]=botColr[1]; 
                 sphVerts[j+6]=botColr[2];	
-                }
+            }
             else if(isLastSlice==1) {
                 sphVerts[j+4]=topColr[0]; 
                 sphVerts[j+5]=topColr[1]; 
                 sphVerts[j+6]=topColr[2];	
             }
             else {	
-                    sphVerts[j+4]= 0.0; 
-                    sphVerts[j+5]= 0.5;	
-                    sphVerts[j+6]= 0.0;	
+                sphVerts[j+4]= 0.0; 
+                sphVerts[j+5]= 0.5;	
+                sphVerts[j+6]= 0.0;	
             }
         }
     }
 }   
+
+function makeSphere1() {
+    var slices =12;		
+    var sliceVerts	= 21;
+
+    var topColr = new Float32Array([1.0, 0.0, 1.0]);
+    var botColr = new Float32Array([1.0, 0.0, 1.0]);
+    var errColr = new Float32Array([1.0, 0.0, 1.0]);
+    var sliceAngle = Math.PI/slices;	
+
+    sphVerts1 = new Float32Array(((slices*2*sliceVerts)-2) * floatsPerVertex);
+                                
+    var cosBot = 0.0;				
+    var sinBot = 0.0;				
+    var cosTop = 0.0;			
+    var sinTop = 0.0;
+    var j = 0;					
+    var isFirstSlice = 1;		
+    var isLastSlice = 0;		
+    for(s=0; s<slices; s++) {	
+        if(s==0) {
+            isFirstSlice = 1;		
+            cosBot =  0.0; 		
+            sinBot = -1.0;		
+        }
+        else {					
+            isFirstSlice = 0;	
+            cosBot = cosTop;
+            sinBot = sinTop;
+        }						
+        cosTop = Math.cos((-Math.PI/2) +(s+1)*sliceAngle); 
+        sinTop = Math.sin((-Math.PI/2) +(s+1)*sliceAngle);
+        if(s==slices-1) isLastSlice=1;
+        for(v=isFirstSlice;    v< 2*sliceVerts-isLastSlice;   v++,j+=floatsPerVertex)
+        {					
+            if(v%2 ==0) { 
+                sphVerts1[j  ] = cosBot * Math.cos(Math.PI * v/sliceVerts);	
+                sphVerts1[j+1] = cosBot * Math.sin(Math.PI * v/sliceVerts);	
+                sphVerts1[j+2] = sinBot;																			// z
+                sphVerts1[j+3] = 1.0;	
+                sphVerts1[j+7] = cosBot * Math.cos(Math.PI * v/sliceVerts);	
+                sphVerts1[j+8] = cosBot * Math.sin(Math.PI * v/sliceVerts);	
+                sphVerts1[j+9] = sinBot;																			// w.				
+            }
+            else {	
+                sphVerts1[j  ] = cosTop * Math.cos(Math.PI * (v-1)/sliceVerts); 
+                sphVerts1[j+1] = cosTop * Math.sin(Math.PI * (v-1)/sliceVerts);
+                sphVerts1[j+2] = sinTop;		
+                sphVerts1[j+3] = 1.0;	
+                sphVerts1[j+7] = cosTop * Math.cos(Math.PI * (v-1)/sliceVerts); 
+                sphVerts1[j+8] = cosTop * Math.sin(Math.PI * (v-1)/sliceVerts);
+                sphVerts1[j+9] = sinTop;
+            }
+            if(v==0) { 	
+                sphVerts1[j+4]=errColr[0]; 
+                sphVerts1[j+5]=errColr[1]; 
+                sphVerts1[j+6]=errColr[2];				
+                }
+            else if(isFirstSlice==1) {	
+                sphVerts1[j+4]=botColr[0]; 
+                sphVerts1[j+5]=botColr[1]; 
+                sphVerts1[j+6]=botColr[2];	
+                }
+            else if(isLastSlice==1) {
+                sphVerts1[j+4]=topColr[0]; 
+                sphVerts1[j+5]=topColr[1]; 
+                sphVerts1[j+6]=topColr[2];	
+            }
+            else {	
+                sphVerts1[j+4]= 1.0; 
+                sphVerts1[j+5]= 0.0;	
+                sphVerts1[j+6]= 1.0;	
+            }
+        }
+    }
+}  
 
 function makeCube(){
     var faceVerts = 4;
@@ -426,6 +577,9 @@ function makeCube(){
             cubeVerts[j+4] = upColor[0];
             cubeVerts[j+5] = upColor[1];
             cubeVerts[j+6] = upColor[2];
+            cubeVerts[j+7] = 0.0;
+            cubeVerts[j+8] = 1.0;
+            cubeVerts[j+9] = 0.0;
         } else {  // central vertices
             cubeVerts[j] = 0.0;
             cubeVerts[j+1] = unitLen/2;
@@ -434,6 +588,9 @@ function makeCube(){
             cubeVerts[j+4] = upColor[0];
             cubeVerts[j+5] = upColor[1];
             cubeVerts[j+6] = upColor[2];
+            cubeVerts[j+7] = 0.0;
+            cubeVerts[j+8] = 1.0;
+            cubeVerts[j+9] = 0.0;
         }
     }
 
@@ -447,6 +604,9 @@ function makeCube(){
             cubeVerts[j+4] = 0.0;
             cubeVerts[j+5] = 0.2;
             cubeVerts[j+6] = 0.0;
+            cubeVerts[j+7] = 0.0;
+            cubeVerts[j+8] = -1.0;
+            cubeVerts[j+9] = 0.0;
         } else {  // central vertices
             cubeVerts[j] = 0.0;
             cubeVerts[j+1] = -unitLen/2;
@@ -455,39 +615,51 @@ function makeCube(){
             cubeVerts[j+4] = 0.0;
             cubeVerts[j+5] = 0.2;
             cubeVerts[j+6] = 0.0;
+            cubeVerts[j+7] = 0.0;
+            cubeVerts[j+8] = -1.0;
+            cubeVerts[j+9] = 0.0;
         }
     }
 
-    // front
-    for (v = 0; v < (2*faceVerts+1); v++, j += floatsPerVertex){
-        if (v%2 == 0){  
-            cubeVerts[j] = Math.cos(Math.PI*v/faceVerts + Math.PI/4);
-            cubeVerts[j+1] = Math.sin(Math.PI*v/faceVerts + Math.PI/4);
-            cubeVerts[j+2] = unitLen/2;
-            cubeVerts[j+3] = 1.0;
-            cubeVerts[j+4] = 0.6;
-            cubeVerts[j+5] = 0.0;
-            cubeVerts[j+6] = 0.6;
-        } else {  // central vertices
-            cubeVerts[j] = 0.0;
-            cubeVerts[j+1] = 0.0;
-            cubeVerts[j+2] = unitLen/2;
-            cubeVerts[j+3] = 1.0; 
-            cubeVerts[j+4] = 0.6;
-            cubeVerts[j+5] = 0.0;
-            cubeVerts[j+6] = 0.6;
-        }
-    }
     // back
     for (v = 0; v < (2*faceVerts+1); v++, j += floatsPerVertex){
         if (v%2 == 0){  
             cubeVerts[j] = Math.cos(Math.PI*v/faceVerts + Math.PI/4);
             cubeVerts[j+1] = Math.sin(Math.PI*v/faceVerts + Math.PI/4);
+            cubeVerts[j+2] = unitLen/2;
+            cubeVerts[j+3] = 1.0;
+            cubeVerts[j+4] = 0.6;
+            cubeVerts[j+5] = 0.0;
+            cubeVerts[j+6] = 0.6;
+            cubeVerts[j+7] = 0.0;
+            cubeVerts[j+8] = 0.0;
+            cubeVerts[j+9] = 1.0;
+        } else {  // central vertices
+            cubeVerts[j] = 0.0;
+            cubeVerts[j+1] = 0.0;
+            cubeVerts[j+2] = unitLen/2;
+            cubeVerts[j+3] = 1.0; 
+            cubeVerts[j+4] = 0.6;
+            cubeVerts[j+5] = 0.0;
+            cubeVerts[j+6] = 0.6;
+            cubeVerts[j+7] = 0.0;
+            cubeVerts[j+8] = 0.0;
+            cubeVerts[j+9] = 1.0;
+        }
+    }
+    // front
+    for (v = 0; v < (2*faceVerts+1); v++, j += floatsPerVertex){
+        if (v%2 == 0){  
+            cubeVerts[j] = Math.cos(Math.PI*v/faceVerts + Math.PI/4);
+            cubeVerts[j+1] = Math.sin(Math.PI*v/faceVerts + Math.PI/4);
             cubeVerts[j+2] = -unitLen/2;
             cubeVerts[j+3] = 1.0;
             cubeVerts[j+4] = 0.8;
             cubeVerts[j+5] = 0.0;
             cubeVerts[j+6] = 0.8;
+            cubeVerts[j+7] = 0.0;
+            cubeVerts[j+8] = 0.0;
+            cubeVerts[j+9] = -1.0;
         } else {  // central vertices
             cubeVerts[j] = 0.0;
             cubeVerts[j+1] = 0.0;
@@ -496,6 +668,9 @@ function makeCube(){
             cubeVerts[j+4] = 0.8;
             cubeVerts[j+5] = 0.0;
             cubeVerts[j+6] = 0.8;
+            cubeVerts[j+7] = 0.0;
+            cubeVerts[j+8] = 0.0;
+            cubeVerts[j+9] = -1.0;
         }
     }
 
@@ -509,6 +684,9 @@ function makeCube(){
             cubeVerts[j+4] = 0.0;
             cubeVerts[j+5] = 0.0;
             cubeVerts[j+6] = 1.0;
+            cubeVerts[j+7] = 1.0;
+            cubeVerts[j+8] = 0.0;
+            cubeVerts[j+9] = 0.0;
         } else {  // central vertices
             cubeVerts[j] = unitLen/2;
             cubeVerts[j+1] = 0.0;
@@ -517,6 +695,9 @@ function makeCube(){
             cubeVerts[j+4] = 0.0;
             cubeVerts[j+5] = 0.0;
             cubeVerts[j+6] = 1.0;
+            cubeVerts[j+7] = 1.0;
+            cubeVerts[j+8] = 0.0;
+            cubeVerts[j+9] = 0.0;
         }
     }
     // left
@@ -529,6 +710,9 @@ function makeCube(){
             cubeVerts[j+4] = 0.0;
             cubeVerts[j+5] = 0.0;
             cubeVerts[j+6] = 0.5;
+            cubeVerts[j+7] = -1.0;
+            cubeVerts[j+8] = 0.0;
+            cubeVerts[j+9] = 0.0;
         } else {  // central vertices
             cubeVerts[j] = -unitLen/2;
             cubeVerts[j+1] = 0.0;
@@ -537,6 +721,9 @@ function makeCube(){
             cubeVerts[j+4] = 0.0;
             cubeVerts[j+5] = 0.0;
             cubeVerts[j+6] = 0.5;
+            cubeVerts[j+7] = -1.0;
+            cubeVerts[j+8] = 0.0;
+            cubeVerts[j+9] = 0.0;
         }
     }
 }
@@ -573,44 +760,44 @@ function makeCylinder() {
             cylVerts[j+5]=ctrColr[1]; 
             cylVerts[j+6]=ctrColr[2];
         }
+        cylVerts[j+7] = 0.0;
+        cylVerts[j+8] = 0.0;
+        cylVerts[j+9] = -1.0;
     }
-    // Create the cylinder side walls, made of 2*capVerts vertices.
-    // v counts vertices within the wall; j continues to count array elements
-    // START with the vertex at 1,0,-1 (completes the cylinder's bottom cap;
-    // completes the 'transition edge' drawn in blue in lecture notes).
+    // Create the cylinder side walls
     for(v=0; v< 2*capVerts;   v++, j+=floatsPerVertex) {
-        if(v%2==0)	// count verts from zero again, 
-                                // and put all even# verts along outer edge of bottom cap:
-        {		
-                cylVerts[j  ] = Math.cos(Math.PI*(v)/capVerts);		// x
-                cylVerts[j+1] = Math.sin(Math.PI*(v)/capVerts);		// y
-                cylVerts[j+2] =-1.0;	// ==z  BOTTOM cap,
-                cylVerts[j+3] = 1.0;	// w.
-                // r,g,b = walColr[]				
-                cylVerts[j+4]=walColr[0]; 
-                cylVerts[j+5]=walColr[1]; 
-                cylVerts[j+6]=walColr[2];			
-            if(v==0) {		// UGLY TROUBLESOME vertex--shares its 1 color with THREE
-                                        // triangles; 1 in cap, 1 in step, 1 in wall.
-                    cylVerts[j+4] = errColr[0]; 
-                    cylVerts[j+5] = errColr[1];
-                    cylVerts[j+6] = errColr[2];		// (make it red; see lecture notes)
-                }
+        if(v%2==0) {		
+            cylVerts[j  ] = Math.cos(Math.PI*(v)/capVerts);		// x
+            cylVerts[j+1] = Math.sin(Math.PI*(v)/capVerts);		// y
+            cylVerts[j+2] =-1.0;	// ==z  BOTTOM cap,
+            cylVerts[j+3] = 1.0;	// w.
+            cylVerts[j+4]=walColr[0]; 
+            cylVerts[j+5]=walColr[1]; 
+            cylVerts[j+6]=walColr[2];			
+            if(v==0) {
+                cylVerts[j+4] = errColr[0]; 
+                cylVerts[j+5] = errColr[1];
+                cylVerts[j+6] = errColr[2];
+            }
+            cylVerts[j+7] = Math.cos(Math.PI*(v)/capVerts);
+            cylVerts[j+8] = Math.sin(Math.PI*(v)/capVerts);
+            cylVerts[j+9] = 0.0;
         }
-        else		// position all odd# vertices along the top cap (not yet created)
-        {
-                cylVerts[j  ] = topRadius * Math.cos(Math.PI*(v-1)/capVerts);		// x
-                cylVerts[j+1] = topRadius * Math.sin(Math.PI*(v-1)/capVerts);		// y
-                cylVerts[j+2] = 1.0;	// == z TOP cap,
-                cylVerts[j+3] = 1.0;	// w.
-                // r,g,b = walColr;
-                cylVerts[j+4]=walColr[0]; 
-                cylVerts[j+5]=walColr[1]; 
-                cylVerts[j+6]=walColr[2];			
+        else {
+            cylVerts[j  ] = topRadius * Math.cos(Math.PI*(v-1)/capVerts);		// x
+            cylVerts[j+1] = topRadius * Math.sin(Math.PI*(v-1)/capVerts);		// y
+            cylVerts[j+2] = 1.0;	// == z TOP cap,
+            cylVerts[j+3] = 1.0;	// w.
+            // r,g,b = walColr;
+            cylVerts[j+4]=walColr[0]; 
+            cylVerts[j+5]=walColr[1]; 
+            cylVerts[j+6]=walColr[2];
+            cylVerts[j+7] = topRadius * Math.cos(Math.PI*(v-1)/capVerts);
+            cylVerts[j+8] = topRadius * Math.sin(Math.PI*(v-1)/capVerts);
+            cylVerts[j+9] = 0.0;
         }
     }
-    // Complete the cylinder with its top cap, made of 2*capVerts -1 vertices.
-    // v counts the vertices in the cap; j continues to count array elements.
+    // Complete the cylinder with its top cap
     for(v=0; v < (2*capVerts -1); v++, j+= floatsPerVertex) {
         // count vertices from zero again, and
         if(v%2==0) {	// position even #'d vertices around top cap's outer edge.
@@ -618,84 +805,27 @@ function makeCylinder() {
             cylVerts[j+1] = topRadius * Math.sin(Math.PI*(v)/capVerts);		// y
             cylVerts[j+2] = 1.0;	// z
             cylVerts[j+3] = 1.0;	// w.
-            // r,g,b = topColr[]
             cylVerts[j+4]=topColr[0]; 
             cylVerts[j+5]=topColr[1]; 
             cylVerts[j+6]=topColr[2];
-            if(v==0) {	// UGLY TROUBLESOME vertex--shares its 1 color with THREE
-                                        // triangles; 1 in cap, 1 in step, 1 in wall.
-                    cylVerts[j+4] = errColr[0]; 
-                    cylVerts[j+5] = errColr[1];
-                    cylVerts[j+6] = errColr[2];		// (make it red; see lecture notes)
-            }		
+            if(v==0) {
+                cylVerts[j+4] = errColr[0]; 
+                cylVerts[j+5] = errColr[1];
+                cylVerts[j+6] = errColr[2];	
+            }
         }
         else {				// position odd#'d vertices at center of the top cap:
             cylVerts[j  ] = 0.0; 			// x,y,z,w == 0,0,-1,1
             cylVerts[j+1] = 0.0;	
             cylVerts[j+2] = 1.0; 
             cylVerts[j+3] = 1.0;			
-            // r,g,b = topColr[]
             cylVerts[j+4]=ctrColr[0]; 
             cylVerts[j+5]=ctrColr[1]; 
-            cylVerts[j+6]=ctrColr[2];
+            cylVerts[j+6]=ctrColr[2];  
         }
-    }
-}
-
-function makeGroundGrid() {
-//==============================================================================
-// Create a list of vertices that create a large grid of lines in the x,y plane
-// centered at the origin.  Draw this shape using the GL_LINES primitive.
-
-    var xcount = 100;			// # of lines to draw in x,y to make the grid.
-    var ycount = 100;		
-    var xymax	= 50.0;			// grid size; extends to cover +/-xymax in x and y.
-        var xColr = new Float32Array([1.0, 1.0, 0.3]);	// bright yellow
-        var yColr = new Float32Array([0.5, 1.0, 0.5]);	// bright green.
-        
-    // Create an (global) array to hold this ground-plane's vertices:
-    gndVerts = new Float32Array(floatsPerVertex*2*(xcount+ycount));
-                        // draw a grid made of xcount+ycount lines; 2 vertices per line.
-                        
-    var xgap = xymax/(xcount-1);		// HALF-spacing between lines in x,y;
-    var ygap = xymax/(ycount-1);		// (why half? because v==(0line number/2))
-    
-    // First, step thru x values as we make vertical lines of constant-x:
-    for(v=0, j=0; v<2*xcount; v++, j+= floatsPerVertex) {
-        if(v%2==0) {	// put even-numbered vertices at (xnow, -xymax, 0)
-            gndVerts[j  ] = -xymax + (v  )*xgap;	// x
-            gndVerts[j+1] = -xymax;								// y
-            gndVerts[j+2] = 0.0;									// z
-            gndVerts[j+3] = 1.0;									// w.
-        }
-        else {				// put odd-numbered vertices at (xnow, +xymax, 0).
-            gndVerts[j  ] = -xymax + (v-1)*xgap;	// x
-            gndVerts[j+1] = xymax;								// y
-            gndVerts[j+2] = 0.0;									// z
-            gndVerts[j+3] = 1.0;									// w.
-        }
-        gndVerts[j+4] = xColr[0];			// red
-        gndVerts[j+5] = xColr[1];			// grn
-        gndVerts[j+6] = xColr[2];			// blu
-    }
-    // Second, step thru y values as wqe make horizontal lines of constant-y:
-    // (don't re-initialize j--we're adding more vertices to the array)
-    for(v=0; v<2*ycount; v++, j+= floatsPerVertex) {
-        if(v%2==0) {		// put even-numbered vertices at (-xymax, ynow, 0)
-            gndVerts[j  ] = -xymax;								// x
-            gndVerts[j+1] = -xymax + (v  )*ygap;	// y
-            gndVerts[j+2] = 0.0;									// z
-            gndVerts[j+3] = 1.0;									// w.
-        }
-        else {					// put odd-numbered vertices at (+xymax, ynow, 0).
-            gndVerts[j  ] = xymax;								// x
-            gndVerts[j+1] = -xymax + (v-1)*ygap;	// y
-            gndVerts[j+2] = 0.0;									// z
-            gndVerts[j+3] = 1.0;									// w.
-        }
-        gndVerts[j+4] = yColr[0];			// red
-        gndVerts[j+5] = yColr[1];			// grn
-        gndVerts[j+6] = yColr[2];			// blu
+        cylVerts[j+7] = 0.0; 
+        cylVerts[j+8] = 0.0;
+        cylVerts[j+9] = 1.0;
     }
 }
 
@@ -791,6 +921,9 @@ function makePyramid() {
             pyrVerts[j+5] = 0.3;
             pyrVerts[j+6] = 0.3;           
         }
+        pyrVerts[j+7] = 0.0;
+        pyrVerts[j+8] = 0.0;
+        pyrVerts[j+9] = 1.0;
     }
 
     // wall
@@ -803,6 +936,9 @@ function makePyramid() {
             pyrVerts[j+4] = 0.3;
             pyrVerts[j+5] = 0.5;
             pyrVerts[j+6] = 0.3;
+            pyrVerts[j+7] = Math.cos(Math.PI*v/botVert);
+            pyrVerts[j+8] = Math.sin(Math.PI*v/botVert);
+            pyrVerts[j+9] = 1.0;
         } else{
             pyrVerts[j] = 0.0;
             pyrVerts[j+1] = 0.0;
@@ -811,6 +947,9 @@ function makePyramid() {
             pyrVerts[j+4] = 0.3;
             pyrVerts[j+5] = 0.7;
             pyrVerts[j+6] = 0.3;
+            pyrVerts[j+7] = Math.cos(Math.PI*(v-1)/botVert);
+            pyrVerts[j+8] = Math.sin(Math.PI*(v-1)/botVert);
+            pyrVerts[j+9] = 1.0;
         }
     }
 }
@@ -875,99 +1014,9 @@ function makeAxis(){
 }
 
 /*************Draw parts here***************/
-function drawAll(gl){
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    
-    // Viewport left side
-    gl.viewport(0, 0, gl.drawingBufferWidth/2, gl.drawingBufferHeight); 
-    if (frustum){
-        modelMatrix.setFrustum(fLeft,fRight,fBottom,fTop,fNear,fFar);
-    } else{
-        ratio = gl.drawingBufferWidth/gl.drawingBufferHeight;
-        modelMatrix.setPerspective(40, ratio, 1, 100);
-    }
-    modelMatrix.lookAt(eyeX,eyeY,eyeZ, atX,atY,atZ, 0.0,0.0,1.0);  
-    pushMatrix(modelMatrix); 
-
-    drawConeTorus(modelMatrix, u_modelMatrix);  // Draw Cone Torus
-    modelMatrix = popMatrix();
-    pushMatrix(modelMatrix);
-    
-    drawConeUmbrl(modelMatrix, u_modelMatrix);  // Draw Cone Umbrella
-    modelMatrix = popMatrix();
-    pushMatrix(modelMatrix);
-
-    drawTree(modelMatrix, u_modelMatrix);  // Draw Tree
-    modelMatrix = popMatrix();
-    pushMatrix(modelMatrix);
-
-    modelMatrix.scale(0.8,0.8,0.8);
-    modelMatrix.translate(1.7,0,0);
-    drawTree(modelMatrix, u_modelMatrix);  // Draw another tree
-    modelMatrix = popMatrix();
-    pushMatrix(modelMatrix);
-
-    drawDoor(modelMatrix, u_modelMatrix);  // Draw door
-    modelMatrix = popMatrix();
-    pushMatrix(modelMatrix);
-    
-    drawRobot(modelMatrix, u_modelMatrix);   // Draw robot
-    drawAxis(modelMatrix, u_modelMatrix);  // Draw robot axis
-    modelMatrix = popMatrix(); 
-    pushMatrix(modelMatrix);
-    
-    drawHelicopter(modelMatrix, u_modelMatrix);  // Draw Helicopter
-    modelMatrix = popMatrix();
-    drawAxis(modelMatrix, u_modelMatrix);  // Draw World Axis
-    drawGroundGrid(modelMatrix, u_modelMatrix);  // Draw Ground Grid
-
-    // Viewport right side
-    gl.viewport(gl.drawingBufferWidth/2, 0, gl.drawingBufferWidth/2, gl.drawingBufferHeight); 
-    modelMatrix.setOrtho(-Math.tan(20/180*Math.PI)*33/ratio, Math.tan(20/180*Math.PI)*33/ratio, -Math.tan(20/180*Math.PI)*33, Math.tan(20/180*Math.PI)*33, 1.0, 100.0);  // left, right, bottom, top, near, far
-    modelMatrix.lookAt(eyeX,eyeY,eyeZ, atX,atY,atZ, 0.0,0.0,1.0);  
-    pushMatrix(modelMatrix); 
-    
-    drawConeTorus(modelMatrix, u_modelMatrix);  // Draw Cone Torus
-    modelMatrix = popMatrix();
-    pushMatrix(modelMatrix);
-
-    drawConeUmbrl(modelMatrix, u_modelMatrix);  // Draw Cone Umbrella
-    modelMatrix = popMatrix();
-    pushMatrix(modelMatrix);
-
-    drawTree(modelMatrix, u_modelMatrix);  // Draw Tree
-    modelMatrix = popMatrix();
-    pushMatrix(modelMatrix);
-
-    modelMatrix.scale(0.8,0.8,0.8);
-    modelMatrix.translate(1.7,0,0);
-    drawTree(modelMatrix, u_modelMatrix);  // Draw another tree
-    modelMatrix = popMatrix();
-    pushMatrix(modelMatrix);
-
-    drawDoor(modelMatrix, u_modelMatrix);  // Draw door
-    modelMatrix = popMatrix();
-    pushMatrix(modelMatrix);
-
-    drawRobot(modelMatrix, u_modelMatrix);   // Draw robot
-    drawAxis(modelMatrix, u_modelMatrix);  // Draw robot axis
-    modelMatrix = popMatrix();
-    pushMatrix(modelMatrix);
-
-    drawHelicopter(modelMatrix, u_modelMatrix);  // Draw Helicopter
-    modelMatrix = popMatrix();
-    drawAxis(modelMatrix, u_modelMatrix);  // Draw World Axis
-    drawGroundGrid(modelMatrix, u_modelMatrix);  // Draw Ground Grid    
-}
-
-function drawRobot(modelMatrix, u_ModelMatrix){
+function drawRobot(modelMatrix, u_ModelMatrix, u_MvpMatrix, u_NormalMatrix){
     /*******************Robot group******************************/
     modelMatrix.rotate(90, 1.0,0.0,0.0);
-    // var qTmp = new Quaternion(0,0,0,1);
-    // var RTmp = new Matrix4();
-    // qTmp.setFromAxisAngle(1.0,0,0,90.0);
-    // RTmp.setFromQuat(qTmp.x, qTmp.y, qTmp.z, qTmp.w);
-    // modelMatrix.concat(RTmp);
     modelMatrix.translate(0.0, 0.7, 0.0);
     
     if (walkStart || stepStart){
@@ -977,8 +1026,8 @@ function drawRobot(modelMatrix, u_ModelMatrix){
         modelMatrix.rotate(currentAngle, 0, 1, 0);
         // modelMatrix.rotate(currentAngle/5, 1, 0, 0);	// spin more slowly on x.
     }
-    quatMatrix.setFromQuat(qTot.x, qTot.y, qTot.z, qTot.w);	// Quaternion Drag
-	modelMatrix.concat(quatMatrix);
+    // quatMatrix.setFromQuat(qTot.x, qTot.y, qTot.z, qTot.w);	// Quaternion Drag
+	// modelMatrix.concat(quatMatrix);
     pushMatrix(modelMatrix);
     
 
@@ -989,39 +1038,48 @@ function drawRobot(modelMatrix, u_ModelMatrix){
     pushMatrix(modelMatrix); 
 
     // Draw body(cube)
-    drawBody(modelMatrix, u_ModelMatrix);
+    drawBody(modelMatrix, u_ModelMatrix, u_MvpMatrix, u_NormalMatrix);
     /**************Draw arms group(cube+torus/pyramaid)*****************/
     modelMatrix = popMatrix();    
     pushMatrix(modelMatrix);
-    drawArms(modelMatrix, u_ModelMatrix);
+    drawArms(modelMatrix, u_ModelMatrix, u_MvpMatrix, u_NormalMatrix);
     // Draw head(sphere)
     modelMatrix = popMatrix();    
-    drawHead(modelMatrix, u_ModelMatrix);
-
+    drawHead(modelMatrix, u_ModelMatrix, u_MvpMatrix, u_NormalMatrix);
 
     /*******************Draw lower body(cyclinder+cube) group***********/
     modelMatrix = popMatrix();
-    drawLowerBody(modelMatrix, u_ModelMatrix);
+    drawLowerBody(modelMatrix, u_ModelMatrix, u_MvpMatrix, u_NormalMatrix);
 }
 
-function drawBody(modelMatrix, u_ModelMatrix){
+function drawBody(modelMatrix, u_ModelMatrix, u_MvpMatrix, u_NormalMatrix){
     modelMatrix.scale(0.25, 0.3, 0.2);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
 }
 
-function drawHead(modelMatrix, u_ModelMatrix){
+function drawHead(modelMatrix, u_ModelMatrix, u_MvpMatrix, u_NormalMatrix){
     // Draw head(sphere):
     modelMatrix.translate(0.0, unitLen*0.25, 0.0);
     modelMatrix.scale(0.15,0.15,0.15);
     if (rHead){
         modelMatrix.rotate(currentAngle, 0, 1, 0);
     }
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, sphStart/floatsPerVertex, sphVerts.length/floatsPerVertex);
 }
 
-function drawArms(modelMatrix, u_ModelMatrix){
+function drawArms(modelMatrix, u_ModelMatrix, u_MvpMatrix, u_NormalMatrix){
     modelMatrix.scale(0.25, 0.3, 0.2);
     /***********Draw arms group**************/
     pushMatrix(modelMatrix);  // push arm
@@ -1035,7 +1093,12 @@ function drawArms(modelMatrix, u_ModelMatrix){
     // draw upper arm
     modelMatrix.scale(0.2, 0.5, 0.25);
     modelMatrix.translate(0,-unitLen*0.6,0);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
     modelMatrix = popMatrix();  // pop left
     // draw lower group
@@ -1049,6 +1112,12 @@ function drawArms(modelMatrix, u_ModelMatrix){
     // draw lower arm
     modelMatrix.scale(0.2*0.9, 0.5*0.9, 0.25*0.9);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
+    gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
     modelMatrix = popMatrix();  // pop lower
     // draw pincers
@@ -1059,10 +1128,22 @@ function drawArms(modelMatrix, u_ModelMatrix){
     // draw left jaw
     modelMatrix.translate(unitLen*1.3, 0, 0);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
+    gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
     // draw right jaw
     modelMatrix.translate(-unitLen*2.6, 0, 0);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
+    gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
     
     modelMatrix = popMatrix();  // pop lower
@@ -1087,7 +1168,12 @@ function drawArms(modelMatrix, u_ModelMatrix){
     // draw upper arm
     modelMatrix.scale(0.2, 0.5, 0.25);
     modelMatrix.translate(0,-unitLen*0.6,0);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
     modelMatrix = popMatrix();  // pop left
     // draw lower group
@@ -1100,7 +1186,12 @@ function drawArms(modelMatrix, u_ModelMatrix){
     pushMatrix(modelMatrix);  // push lower
     // draw lower arm
     modelMatrix.scale(0.2*0.9, 0.5*0.9, 0.25*0.9);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
     modelMatrix = popMatrix();  // pop lower
     // draw pincers
@@ -1108,15 +1199,25 @@ function drawArms(modelMatrix, u_ModelMatrix){
     modelMatrix.scale(0.05,0.2,0.05);
     // draw left jaw
     modelMatrix.translate(unitLen*1.3, 0, 0);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
     // draw right jaw
     modelMatrix.translate(-unitLen*2.6, 0, 0);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
 }
 
-function drawLowerBody(modelMatrix, u_ModelMatrix){
+function drawLowerBody(modelMatrix, u_ModelMatrix, u_MvpMatrix, u_NormalMatrix){
     // Do lower body transformations...
     // modelMatrix.rotate(currentAngle, 0,1,0);
     pushMatrix(modelMatrix);
@@ -1129,7 +1230,12 @@ function drawLowerBody(modelMatrix, u_ModelMatrix){
     modelMatrix.rotate(180, 0,0,1);
     modelMatrix.scale(0.05,0.05,0.2);
     modelMatrix.translate(0, 0, unitLen*0.89);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cylStart/floatsPerVertex, cylVerts.length/floatsPerVertex);
 
     // left foot
@@ -1143,7 +1249,12 @@ function drawLowerBody(modelMatrix, u_ModelMatrix){
     modelMatrix.scale(0.06, 0.05, 0.1);
     modelMatrix.translate(0.0, 0.0, -0.3);
     modelMatrix.rotate(45, 0,1,0);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
 
     //Draw right leg
@@ -1155,7 +1266,12 @@ function drawLowerBody(modelMatrix, u_ModelMatrix){
     modelMatrix.rotate(90, 1,0,0);
     modelMatrix.scale(0.05,0.05,0.2);
     modelMatrix.translate(0, 0, unitLen*0.89);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cylStart/floatsPerVertex, cylVerts.length/floatsPerVertex);
 
     // right foot
@@ -1168,7 +1284,12 @@ function drawLowerBody(modelMatrix, u_ModelMatrix){
     modelMatrix.scale(0.06, 0.05, 0.1);
     modelMatrix.translate(0.0, 0.0, -0.3);
     modelMatrix.rotate(45, 0,1,0);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
 }
 
@@ -1197,31 +1318,16 @@ function drawUmbrella(modelMatrix, u_ModelMatrix){
     gl.drawArrays(gl.TRIANGLE_STRIP, coneStart/floatsPerVertex, coneVert.length/floatsPerVertex);
 }
 
-function drawDiamondWand(modelMatrix, u_ModelMatrix){
-    // cube
-    pushMatrix(modelMatrix)
-    modelMatrix.translate(-unitLen*0.51, -unitLen*1.38, 0.0);
-    // modelMatrix.rotate(60, 1,0,0);
-    modelMatrix.scale(0.05, 1.0, 0.05);
-    // modelMatrix.rotate(currentAngle, 0,1,0);
+function drawGroundGrid(modelMatrix, u_ModelMatrix){  
+    modelMatrix.translate( 0.4, -0.4, 0.0);	
+    modelMatrix.scale(0.1, 0.1, 0.1);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
-    gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
-    
-    modelMatrix = popMatrix(modelMatrix);
-    // inverse
-    modelMatrix.translate(-unitLen, -unitLen*1.88, 0);
-    modelMatrix.rotate(90, 1,0,0);
-    modelMatrix.translate(0.7, 0, 0);
-    modelMatrix.scale(0.2,0.2,0.2);
-    gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
-    gl.drawArrays(gl.TRIANGLE_STRIP, dmStart/floatsPerVertex, dmVerts.length/floatsPerVertex);
+    gl.drawArrays(gl.LINES, gndStart/floatsPerVertex, gndVerts.length/floatsPerVertex);
 }
 
-function drawHelicopter(modelMatrix, u_ModelMatrix){
+function drawHelicopter(modelMatrix, u_ModelMatrix, u_MvpMatrix, u_NormalMatrix){
     modelMatrix.rotate(90, 1.0,0.0,0.0);
     modelMatrix.translate(0.0, 1.6, 0);
-    // modelMatrix.rotate(10, 1,0,0);
-    // modelMatrix.rotate(10, 0,1,0);
     if (flyStart){
         flyAround(modelMatrix);
     }
@@ -1237,8 +1343,12 @@ function drawHelicopter(modelMatrix, u_ModelMatrix){
     pushMatrix(modelMatrix); // up cube
     modelMatrix.scale(0.33,0.2,0.15);
     modelMatrix.rotate(90, 1,0,0);
-    // modelMatrix.rotate(currentAngle, 0,0,1);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, sphStart/floatsPerVertex, sphVerts.length/floatsPerVertex);
 
     // draw rear wing
@@ -1246,7 +1356,12 @@ function drawHelicopter(modelMatrix, u_ModelMatrix){
     modelMatrix.translate(0.3, 0.0, 0.0);
     modelMatrix.rotate(90, 0,1,0);
     modelMatrix.scale(0.03,0.03,0.7);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, pyrStart/floatsPerVertex, pyrVerts.length/floatsPerVertex);
     
 
@@ -1259,28 +1374,48 @@ function drawHelicopter(modelMatrix, u_ModelMatrix){
     modelMatrix.rotate(flyAngle*15, 0,1,0);
     modelMatrix.scale(0.4,0.01, 0.03);
     modelMatrix.translate(-0.7,0,0);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
 
     modelMatrix = popMatrix();
     modelMatrix.rotate((flyAngle+90)*15, 0,1,0);
     modelMatrix.scale(0.4,0.01, 0.03);
     modelMatrix.translate(-0.7,0,0);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
 
     modelMatrix = popMatrix();
     modelMatrix.rotate((flyAngle+180)*15, 0,1,0);
     modelMatrix.scale(0.4,0.01, 0.03);
     modelMatrix.translate(-0.7,0,0);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
 
     modelMatrix = popMatrix();
     modelMatrix.rotate((flyAngle+270)*15, 0,1,0);
     modelMatrix.scale(0.4,0.01, 0.03);
     modelMatrix.translate(-0.7,0,0);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
 
     // up cube
@@ -1289,7 +1424,12 @@ function drawHelicopter(modelMatrix, u_ModelMatrix){
     modelMatrix.rotate(-90, 1,0,0);
     modelMatrix.rotate(flyAngle, 0,0,1);
     modelMatrix.scale(0.02,0.02,0.05);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cylStart/floatsPerVertex, cylVerts.length/floatsPerVertex);
 
 
@@ -1303,41 +1443,49 @@ function drawHelicopter(modelMatrix, u_ModelMatrix){
     modelMatrix.rotate(flyAngle*15, 0,1,0);
     modelMatrix.scale(0.1,0.01, 0.03);
     modelMatrix.translate(-0.7,0,0);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
 
     modelMatrix = popMatrix();
     modelMatrix.rotate((flyAngle+90)*15, 0,1,0);
     modelMatrix.scale(0.1,0.01, 0.03);
     modelMatrix.translate(-0.7,0,0);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
 
     modelMatrix = popMatrix();
     modelMatrix.rotate((flyAngle+180)*15, 0,1,0);
     modelMatrix.scale(0.1,0.01, 0.03);
     modelMatrix.translate(-0.7,0,0);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
    
     modelMatrix = popMatrix();
     modelMatrix.rotate((flyAngle+270)*15, 0,1,0);
     modelMatrix.scale(0.1,0.01, 0.03);
     modelMatrix.translate(-0.7,0,0);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
-}
-
-function drawGroundGrid(modelMatrix, u_ModelMatrix){  
-    modelMatrix.translate( 0.4, -0.4, 0.0);	
-    modelMatrix.scale(0.1, 0.1, 0.1);
-    gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
-    gl.drawArrays(gl.LINES, gndStart/floatsPerVertex, gndVerts.length/floatsPerVertex);
-}
-
-function drawAxis(modelMatrix, u_ModelMatrix){
-    gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
-    gl.drawArrays(gl.LINES, axisStart/floatsPerVertex, axisVerts.length/floatsPerVertex);
 }
 
 function drawConeTorus(modelMatrix, u_ModelMatrix){
@@ -1367,118 +1515,73 @@ function drawConeUmbrl(modelMatrix, u_ModelMatrix){
     drawUmbrella(modelMatrix, u_ModelMatrix);
 }
 
-function drawTree(modelMatrix, u_ModelMatrix){
+function drawTree(modelMatrix, u_ModelMatrix, u_MvpMatrix, u_NormalMatrix){
 
     modelMatrix.translate(1.5,-1.5,0);
     pushMatrix(modelMatrix);
     modelMatrix.translate(0,0,0.4)
     modelMatrix.scale(0.8,0.8,0.2);
+    pushMatrix(modelMatrix);  // new
+    modelMatrix.rotate(sphAngle,0,0,1);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, pyrStart/floatsPerVertex, pyrVerts.length/floatsPerVertex);
+    
+    modelMatrix = popMatrix();  // new
     modelMatrix.translate(0,0,1);
     modelMatrix.scale(0.7,0.7,1);
+    pushMatrix(modelMatrix);  // new
+    modelMatrix.rotate(-sphAngle*2,0,0,1);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, pyrStart/floatsPerVertex, pyrVerts.length/floatsPerVertex);
+    
+    modelMatrix = popMatrix();  // new
     modelMatrix.translate(0,0,1);
     modelMatrix.scale(0.7,0.7,1);
+    modelMatrix.rotate(sphAngle*4,0,0,1);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, pyrStart/floatsPerVertex, pyrVerts.length/floatsPerVertex);
 
     modelMatrix = popMatrix();
     modelMatrix.translate(0,0,0.2);
     modelMatrix.scale(0.08,0.08,0.2);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
     gl.drawArrays(gl.TRIANGLE_STRIP, cylStart/floatsPerVertex, cylVerts.length/floatsPerVertex); 
 }
 
-function drawDoor(modelMatrix, u_ModelMatrix){
-    modelMatrix.translate(-1.5,-0.5,0);
-    pushMatrix(modelMatrix);
-    modelMatrix.scale(0.05,0.05,0.8);
-    modelMatrix.translate(15,-20,0.7);
+function drawLargeSphere(modelMatrix, u_ModelMatrix, u_MvpMatrix, u_NormalMatrix){
+    modelMatrix.scale(0.5,0.5,0.5);
+    modelMatrix.translate(-3,-8,0);
+    modelMatrix.rotate(sphAngle, 0,0,1);
+    normalMatrix.setInverseOf(modelMatrix);
+    normalMatrix.transpose();
+    gl.uniformMatrix4fv(u_NormalMatrix, false, normalMatrix.elements);
     gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
-    gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
-    modelMatrix.translate(-30,0,0);
-    gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
-    gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
-    modelMatrix = popMatrix();
-    pushMatrix(modelMatrix);
-    modelMatrix.scale(1.1,0.05,0.025);
-    modelMatrix.translate(0,-20,46);
-    gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
-    gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
-    modelMatrix = popMatrix();
-    modelMatrix.translate(0.70,-0.95,0.6);
-    if(open){
-        modelMatrix.rotate(60,0,0,1);
-    }
-    modelMatrix.translate(-0.7,0,0);
-    modelMatrix.scale(1,0.05,0.8);
-    gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
-    gl.drawArrays(gl.TRIANGLE_STRIP, cubeStart/floatsPerVertex, cubeVerts.length/floatsPerVertex);
+    mvpMatrix.set(vpMatrix).multiply(modelMatrix);
+    gl.uniformMatrix4fv(u_MvpMatrix, false, mvpMatrix.elements);
+    gl.drawArrays(gl.TRIANGLE_STRIP, sphStart1/floatsPerVertex, sphVerts1.length/floatsPerVertex);
 }
 
 /*************Register events here***************/
-function runStop() {
-    if(ANGLE_STEP*ANGLE_STEP > 1) {  // stop currentAngle
-        myTmp = ANGLE_STEP;
-        ANGLE_STEP = 0;
-    }
-    if(walk_ANGLE_STEP*walk_ANGLE_STEP > 1){  // stop walking
-        walkTmp = walk_ANGLE_STEP;
-        walk_ANGLE_STEP = 0;
-    }
-    else {
-        ANGLE_STEP = myTmp;
-        walk_ANGLE_STEP = walkTmp;
-    }
-}
-
-function bowEvent(){
-    bowStart = !bowStart;
-    if (bowStart){
-        rRobot = false;
-        rLArm = false; 
-        rRArm = false; 
-        rHead = false; 
-        rLower = false; 
-        rThing = false;
-    }else{
-        rRobot = true;
-        rLArm = true; 
-        rRArm = true; 
-        rHead = true; 
-        rLower = true; 
-        rThing = true;
-    }
-    walkStart = false;
-    stepStart = false;
-}
-
-function walkEvent(){
-    // stop any motion
-    if (bowStart){
-        bowEvent();
-    } 
-    if(ANGLE_STEP*ANGLE_STEP <= 1) { // if robot stopped
-        runStop();
-    }
-    rRobot = !rRobot;
-    walkStart = !walkStart;
-    direction = 0;
-    stepStart = false;
-}
-
-function stepEvent(){
-    if (bowStart){
-        bowEvent();
-    }
-    stepStart = true;
-    if(ANGLE_STEP*ANGLE_STEP <= 1) { // if robot stopped
-        runStop();
-    }
-}
-
 function myMouseDown(ev) {  
     var rect = ev.target.getBoundingClientRect();
     var xp = ev.clientX - rect.left;
@@ -1490,9 +1593,9 @@ function myMouseDown(ev) {
     xMclik = x;	
     yMclik = y;
     // Stop helicopter by clicking in a specific area.
-    if (ev.clientX<610 && ev.clientY<230){   // when using x, y, seems x and y may have same values outside canvas.
-        runStopHeli();
-    }
+    // if (ev.clientX<610 && ev.clientY<230){   // when using x, y, seems x and y may have same values outside canvas.
+    //     runStopHeli();
+    // }
 }
 
 function myMouseMove(ev){
@@ -1504,11 +1607,14 @@ function myMouseMove(ev){
     
     var x = (xp - canvas.width/2) / (canvas.width/2);	
     var y = (yp - canvas.height/2) / (canvas.height/2);
-
+ 
     xMdragTot += (x - xMclik);
     yMdragTot += (y - yMclik);
 
-    dragQuat(x - xMclik, y - yMclik);
+    lamp0.I_pos.elements.set([
+        lamp0.I_pos.elements[0] - (x - xMclik)*50,
+        lamp0.I_pos.elements[1],
+        lamp0.I_pos.elements[2] + (y - yMclik)*50]);
 
     xMclik = x;
     yMclik = y;
@@ -1526,8 +1632,7 @@ function myMouseUp(ev) {
     xMdragTot += (x - xMclik);
     yMdragTot += (y - yMclik);
 
-    dragQuat(x - xMclik, y - yMclik);
-    
+    // dragQuat(x - xMclik, y - yMclik);
 }
 
 function myKeyDown(ev){
@@ -1658,43 +1763,43 @@ function myKeyDown(ev){
                 open = !open;
             }
             break;
+
+        case "Digit1":
+            g_show1 = 1;
+            g_show2 = 0;
+            g_show3 = 0;
+            break;
+
+        case "Digit2":
+            g_show1 = 0;
+            g_show2 = 1;
+            g_show3 = 0;
+            break;
+        
+        case "Digit3":
+            g_show1 = 0;
+            g_show2 = 0;
+            g_show3 = 1;
+            break;
+
+        case "KeyX":
+            // fixed light toggle
+            lamp0On = !lamp0On;
+            break;
+        
+        case "KeyC":
+            // Camera light toggle
+            lamp1On = !lamp1On;
+            break;
+            
+        case "KeyM":
+            matlSel = (matlSel +1)%MATL_DEFAULT;
+            matl.setMatl(matlSel);	
+            console.log(matlSel)
+            break;
+
+        case "KeyB":
+            isBlinn = -isBlinn;
+            break;
     }
-}
-
-function dragQuat(xdrag, ydrag){
-	var qTmp = new Quaternion(0,0,0,1);
-    var dist = Math.sqrt(xdrag*xdrag + ydrag*ydrag);
-    qNew.setFromAxisAngle(ydrag*Math.cos((theta-direction)*Math.PI/180) + 0.0001, xdrag + 0.0001, -ydrag*Math.sin((theta-direction)*Math.PI/180) + 0.0001, dist*150.0);
-
-	qTmp.multiply(qNew,qTot);
-	qTot.copy(qTmp);
-}
-
-function runStopHeli(){
-    if(fly_ANGLE_STEP*fly_ANGLE_STEP > 1) {  // stop currentAngle
-        flyTmp = fly_ANGLE_STEP;
-        fly_ANGLE_STEP = 0;
-    }else {
-        fly_ANGLE_STEP = flyTmp;
-    }
-}
-
-function drawResize(){
-    var nuCanvas = document.getElementById('gl_canvas');	// get current canvas
-    var nuGl = getWebGLContext(nuCanvas);
-    // var rect = Element.getBoundingClientRect();
-    
-    nuCanvas.width = innerWidth - 16;
-    nuCanvas.height = innerHeight*3/4 - 16;
-
-    drawAll(nuGl);
-}
-
-function resetFrustum(){
-    fLeft = -2.0;
-    fRight = 2.0;
-    fBottom = -2.0;
-    fTop = 2.0;
-    fNear = 3.0;
-    fFar = 100.0; 
 }
